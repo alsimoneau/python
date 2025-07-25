@@ -1,16 +1,19 @@
 import random
 
 import matplotlib.animation as animation
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 
 
 class SnakeGame:
     HIGH_SCORE_FILE = "highscore.txt"
+    FPS = 16
+    SHRINKING_TIME = 250
 
     def __init__(self, grid_size=20):
         self.grid_size = grid_size
-        self.fig = plt.figure(figsize=(7, 5))
+        self.fig = plt.figure(figsize=(6, 4))
         self.game_state = {}
         self.anim = None
         self.high_score = self.load_high_score()
@@ -37,17 +40,34 @@ class SnakeGame:
 
         self.fig.clf()
         self.fig.suptitle(
-            f"Score: {self.game_state['score']} | High Score: {self.high_score}",
+            f"Score: {self.game_state['score']} [{self.high_score}]",
             fontsize=14,
             color="blue",
         )
         self.subtitle = self.fig.text(
-            0.5, 0.89, "", ha="center", fontsize=12, color="gray"
+            0.5, 0.5, "", ha="center", fontsize=12, color="gray"
         )
 
-        gs = self.fig.add_gridspec(1, 3, width_ratios=[1, 6, 1])
-        self.ax = self.fig.add_subplot(gs[1])
-        self.bar_ax = self.fig.add_subplot(gs[2])
+        self.instruction_ax = self.fig.add_axes([0.05, 0.1, 0.15, 0.8])
+        self.ax = self.fig.add_axes([0.1, 0.1, 0.8, 0.8])
+        self.bar_ax = self.fig.add_axes([0.8, 0.1, 0.15, 0.8])
+
+        # Set up instruction_ax
+        self.instruction_ax.set_xticks([])
+        self.instruction_ax.set_yticks([])
+        self.instruction_ax.axis("off")
+        self.instruction_ax.text(
+            0,
+            0.5,
+            "Controls:\n\n"
+            "Arrows: Move\n"
+            "Space: Pause\n"
+            "ESC: Quit\n"
+            "\n\nTips:\n\nEat apples\nto grow\n\nAvoid walls\nand yourself!",
+            va="center",
+            ha="left",
+            fontsize=10,
+        )
 
         self.ax.set_xlim(-0.5, self.grid_size - 0.5)
         self.ax.set_ylim(-0.5, self.grid_size - 0.5)
@@ -103,6 +123,9 @@ class SnakeGame:
                 self.subtitle.set_text("")
             return
 
+        if self.game_state["paused"]:
+            return
+
         new_dir = direction_map.get(event.key)
         if new_dir:
             self.game_state["input_queue"].append(new_dir)
@@ -131,7 +154,7 @@ class SnakeGame:
         if self.game_state["score"] > self.high_score:
             self.high_score = self.game_state["score"]
         self.fig.suptitle(
-            f"Score: {self.game_state['score']} | High Score: {self.high_score}",
+            f"Score: {self.game_state['score']} [{self.high_score}]",
             fontsize=14,
             color="blue",
         )
@@ -144,7 +167,16 @@ class SnakeGame:
         counts = self.game_state["move_counts"] + [0] * (
             num_apples - len(self.game_state["move_counts"])
         )
-        ax.barh(range(1, num_apples + 1), counts[:num_apples], color="green")
+
+        # Normalize the counts for color mapping
+        vmax = max(self.grid_size ** (3 / 2), max(counts))
+        norm = mcolors.Normalize(vmin=min(counts), vmax=vmax)
+        cmap = plt.colormaps["RdYlGn_r"]
+
+        # Generate colors from colormap
+        colors = [cmap(norm(value)) for value in counts[:num_apples]]
+
+        ax.barh(range(1, num_apples + 1), counts[:num_apples], color=colors)
         ax.invert_yaxis()
         ax.set_xticks([])
         ax.set_yticks([])
@@ -157,19 +189,20 @@ class SnakeGame:
 
     def handle_game_over(self):
         self.game_state["game_over"] = True
-        self.game_state["shrinking_after_gameover"] = 5
+        self.game_state["shrinking_after_gameover"] = int(
+            self.SHRINKING_TIME / self.FPS
+        )
         self.game_state["input_queue"].clear()
         self.game_state["input_locked"] = True
 
     def finalize_game_over_screen(self):
         self.game_state["input_locked"] = False
         self.fig.suptitle(
-            f"Game Over. Score: {self.game_state['score']} | High Score: {self.high_score}",
+            f"Game Over. Score: {self.game_state['score']} [{self.high_score}]",
             fontsize=14,
             color="red",
         )
         self.ax.clear()
-        self.ax.set_title("Snake Head Movement Heatmap", fontsize=12)
         self.ax.imshow(
             self.game_state["head_visits"],
             cmap="hot",
@@ -197,11 +230,11 @@ class SnakeGame:
 
         if self.game_state["shrinking_after_gameover"] > 0:
             step = self.game_state["shrinking_after_gameover"] - 1
-            scale = step / 5
+            scale = step * self.FPS / self.SHRINKING_TIME
             new_size = 300 * scale
 
             self.fig.suptitle(
-                f"Game Over. Score: {self.game_state['score']} | High Score: {self.high_score}",
+                f"Game Over. Score: {self.game_state['score']} [{self.high_score}]",
                 fontsize=14,
                 color="red",
             )
@@ -265,7 +298,7 @@ class SnakeGame:
 
     def run(self):
         self.anim = animation.FuncAnimation(
-            self.fig, self.update, interval=100, cache_frame_data=False
+            self.fig, self.update, interval=1000 / self.FPS, cache_frame_data=False
         )
         plt.show()
         self.save_high_score()
